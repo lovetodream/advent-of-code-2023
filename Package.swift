@@ -6,5 +6,6 @@ let package = Package(
     platforms: [.macOS(.v13)],
     targets: [
         .executableTarget(name: "Day1", resources: [.copy("input.txt")]),
+        .executableTarget(name: "Day2", resources: [.copy("input.txt")]),
     ]
 )
