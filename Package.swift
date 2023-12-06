@@ -10,5 +10,6 @@ let package = Package(
         .executableTarget(name: "Day3", resources: [.copy("input.txt")]),
         .executableTarget(name: "Day4", resources: [.copy("input.txt")]),
         .executableTarget(name: "Day5", resources: [.copy("input.txt")]),
+        .executableTarget(name: "Day6", resources: [.copy("input.txt")]),
     ]
 )
