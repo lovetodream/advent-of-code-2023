@@ -1,79 +1,107 @@
 import Foundation
 
-// NOTE: This solution is very lazy and slow (~ 15 min release build on ARM M1 Max)
-
 let input = try String(contentsOf: Bundle.module.url(
     forResource: "input", withExtension: "txt", subdirectory: nil)!
 ).split(separator: "\n")
+
+struct Rule {
+    var destination: Int
+    var source: Int
+    var range: Int
+}
+
+struct OptimizableRange {
+    var from: Int
+    var to: Int
+}
 
 let rawSeeds = input[0]
     .replacingOccurrences(of: "seeds: ", with: "")
     .split(separator: " ")
     .compactMap { Int($0) }
 
-var seeds: [Range<Int>] = []
+var seeds: [OptimizableRange] = []
 for i in stride(from: 0, to: rawSeeds.count, by: 2) {
     let start = rawSeeds[i]
     let end = start + rawSeeds[i + 1]
-    seeds.append(start..<end)
+    seeds.append(OptimizableRange(from: start, to: end))
 }
 
-var maps: [Map: [(dstRange: Range<Int>, srcRange: Range<Int>)]] = [:]
+var maps: [[Rule]] = []
 
-enum Map: String {
-    case seedToSoil = "seed-to-soil"
-    case soilToFertilizer = "soil-to-fertilizer"
-    case fertilizerToWater = "fertilizer-to-water"
-    case waterToLight = "water-to-light"
-    case lightToTemperature = "light-to-temperature"
-    case temperatureToHumidity = "temperature-to-humidity"
-    case humidityToLocation = "humidity-to-location"
-}
-
-var currentMap: Map?
 for line in input.suffix(from: 1) { // skip seeds
     if line.contains("map") {
-        currentMap = Map(rawValue: line.replacingOccurrences(of: " map:", with: ""))!
-        maps[currentMap!] = []
+        // sort recent to allow range based iteration later
+        if !maps.isEmpty {
+            maps[maps.count - 1].sort(by: { $0.source < $1.source })
+        }
+        maps.append([])
     } else {
         let values = line.split(separator: " ").compactMap { Int($0) }
-        let destinationRange = values[0]..<(values[0] + values[2])
-        let sourceRange = values[1]..<(values[1] + values[2])
-        maps[currentMap!]!.append((destinationRange, sourceRange))
+        maps[maps.count - 1].append(.init(
+            destination: values[0],
+            source: values[1],
+            range: values[2]
+        ))
     }
 }
 
-var lowestLocation: Int?
-let totalSeeds = seeds.count
-for (index, seed) in seeds.enumerated() {
-    print((Double(index) / Double(totalSeeds)).formatted(.percent), Date.now.formatted(date: .abbreviated, time: .complete))
-    for value in seed {
-        var next = value
-        next = convert(next, using: .seedToSoil) ?? next
-        next = convert(next, using: .soilToFertilizer) ?? next
-        next = convert(next, using: .fertilizerToWater) ?? next
-        next = convert(next, using: .waterToLight) ?? next
-        next = convert(next, using: .lightToTemperature) ?? next
-        next = convert(next, using: .temperatureToHumidity) ?? next
-        next = convert(next, using: .humidityToLocation) ?? next
-        if (lowestLocation ?? .max) > next {
-            lowestLocation = next
+let runtime = ContinuousClock().measure {
+    var currentRanges = seeds
+
+    // go through every map starting with seeds to soils...
+    for map in maps {
+        var newRanges = [OptimizableRange]()
+
+        for var range in currentRanges {
+            for rule in map {
+                let offset = rule.destination - rule.source
+
+                // check fast path
+                let ruleApplies = range.from <= range.to
+                    && range.from <= (rule.source + rule.range)
+                    && range.to >= rule.source
+
+                // check if we have to adjust the ranges for the next mapping
+                if ruleApplies {
+                    if range.from < rule.source {
+                        newRanges.append(.init(
+                            from: range.from, to: rule.source - 1
+                        ))
+                        range.from = rule.source
+                        if range.to < (rule.source + rule.range) {
+                            newRanges.append(.init(
+                                from: range.from + offset, to: range.to + offset
+                            ))
+                            range.from = range.to + 1
+                        } else {
+                            newRanges.append(.init(
+                                from: range.from + offset,
+                                to: rule.source + rule.range - 1 + offset
+                            ))
+                            range.from = rule.source + rule.range
+                        }
+                    } else if range.to < (rule.source + rule.range) {
+                        newRanges.append(.init(
+                            from: range.from + offset, to: range.to + offset
+                        ))
+                        range.from = range.to + 1
+                    } else {
+                        newRanges.append(.init(
+                            from: range.from + offset,
+                            to: rule.source + rule.range - 1 + offset
+                        ))
+                        range.from = rule.source + rule.range
+                    }
+                }
+            }
+            if range.from <= range.to {
+                newRanges.append(range)
+            }
         }
-    }
-}
-print(lowestLocation!)
-
-func convert(_ value: Int, using map: Map) -> Int? {
-    if let map = maps[map]!.first(where: { _, srcRange in
-        srcRange.contains(value)
-    }), map.srcRange.contains(value) {
-        let offset = value - map.srcRange.lowerBound
-        let likelyNext = map.dstRange.lowerBound + offset
-        if map.dstRange.contains(likelyNext) {
-            return likelyNext
-        }
+        currentRanges = newRanges
     }
 
-    return nil
+    print(currentRanges.map(\.from).min()!)
 }
-
+print(runtime)
